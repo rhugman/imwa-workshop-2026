@@ -45,7 +45,7 @@ def prep_bins(dest_path, src_path=os.path.join('bin'), get_only=[]):
     return
 
 
-def plot_setup(gwf, pitcells, kper=1, show_hk=False, gw_level_locs=None):
+def plot_setup(gwf, pitcells, kper=1, show_hk=False, gw_level_locs=None, tsf_cells=None):
 
     width_max = 174 / 25.4  # mm to inch
     height_max = 234 / 25.4  # mm to inch
@@ -92,6 +92,22 @@ def plot_setup(gwf, pitcells, kper=1, show_hk=False, gw_level_locs=None):
     handles.append(plt.Line2D([0], [0], marker='s', color='w',
                                markerfacecolor="w", markeredgecolor='k',
                                markersize=15, label="Pit"))
+
+    if tsf_cells is not None:
+        tsf_arr = np.array([c[0] for c in tsf_cells])   # (layer, row, col) tuples
+        tsf_x = [centx[r, c] for (_, r, c) in tsf_arr]
+        tsf_y = [centy[r, c] for (_, r, c) in tsf_arr]
+        tsf_xmin, tsf_xmax = min(tsf_x), max(tsf_x)
+        tsf_ymin, tsf_ymax = min(tsf_y), max(tsf_y)
+        tsf_rect = patches.Rectangle(
+            xy=(tsf_xmin - delr / 2, tsf_ymin - delr / 2),
+            width=tsf_xmax - tsf_xmin + delr, height=tsf_ymax - tsf_ymin + delr,
+            lw=1.5, edgecolor='navy', facecolor='steelblue', alpha=0.5,
+        )
+        plt.gca().add_patch(tsf_rect)
+        handles.append(plt.Line2D([0], [0], marker='s', color='w',
+                                   markerfacecolor='steelblue', markeredgecolor='navy',
+                                   markersize=10, label='Tailings (TSF)'))
 
     if gw_level_locs is not None:
         ax.scatter(gw_level_locs.x.values, gw_level_locs.y.values,
@@ -214,6 +230,19 @@ def build_wells_mar(sim, pitcells, rate):
     wel.ts.set_all_data_external()
     wel.set_all_data_external()
     return wel
+
+
+def specify_tsf_cells(col_center=65, row_center=30, half_ncol=2, half_nrow=1, conc=1.0):
+    """Return CNC-format list [((layer, row, col), conc), ...] for the TSF footprint.
+
+    Default location is northeast of the pit — upgradient so AMD migrates westward
+    through the dewatering zone toward the GDE.
+    """
+    cells = []
+    for row in range(row_center - half_nrow, row_center + half_nrow + 1):
+        for col in range(col_center - half_ncol, col_center + half_ncol + 1):
+            cells.append(((0, row, col), conc))
+    return cells
 
 
 def build_utlobs(gwf, pitcells):
