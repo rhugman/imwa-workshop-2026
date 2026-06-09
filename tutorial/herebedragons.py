@@ -245,6 +245,24 @@ def specify_tsf_cells(col_center=65, row_center=30, half_ncol=2, half_nrow=1, co
     return cells
 
 
+def sout_to_array(df, col, idom):
+    """Pivot a sout.csv time-slice into a 2-D array ready for PlotMapView.plot_array().
+
+    Parameters
+    ----------
+    df   : DataFrame slice filtered to a single time (e.g. sout[sout['time_d'] == t])
+    col  : column name from sout.csv (e.g. 'solution_ph')
+    idom : 2-D idomain array (nrow, ncol) — inactive cells become NaN
+
+    Returns
+    -------
+    arr  : (nrow, ncol) float64 array
+    """
+    arr = df.pivot(index='row', columns='col', values=col).values.astype(float)
+    arr[idom <= 0] = np.nan
+    return arr
+
+
 def build_utlobs(gwf, pitcells):
     """Build OBS utility package for head monitoring at pit and MAR wells."""
     obs_layer = 0
