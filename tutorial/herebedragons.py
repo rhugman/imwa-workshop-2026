@@ -166,30 +166,20 @@ def build_wells_dewater(sim, pitcells, rate):
     neighbour_nodes = list(set(n for nd in nodes for n in neighbours[nd]) - set(nodes))
     neighbour_lrc = mg.get_lrc(neighbour_nodes)
 
-    tsnames = [f"dewater{i}" for i in range(len(neighbour_lrc))]
-    tsmethods = ['stepwise'] * len(neighbour_lrc)
-    tsdata = [(0.0, 0.0), (1.0, rate), (3650, 0.0), (1e30, 0.0)]
+    nper = sim.tdis.nper.get_data()
+    names = [f"dewater{i}" for i in range(len(neighbour_lrc))]
 
-    spd = {1: [(cell, nm, nm) for cell, nm in zip(neighbour_lrc, tsnames)]}
+    # SP 1: dewatering active; SP 2+ wells off
+    spd = {1: [(tuple(cell), rate, 0.0, nm) for cell, nm in zip(neighbour_lrc, names)]}
+    for kper in range(2, nper):
+        spd[kper] = [(tuple(cell), 0.0, 0.0, nm) for cell, nm in zip(neighbour_lrc, names)]
 
-    centx, centy = mg.xcellcenters, mg.ycellcenters
-    df = pd.DataFrame(spd[1]).iloc[:, :-1].rename(columns={1: "name"})
-    df[["k", "i", "j"]] = df.iloc[:, 0].apply(lambda x: pd.Series(x))
-    df["x"] = [centx[i, j] for i, j in zip(df.i, df.j)]
-    df["y"] = [centy[i, j] for i, j in zip(df.i, df.j)]
-    # df.iloc[:, 1:].to_csv("location_dewater_wells.csv", index=False)
-
-    wel = flopy.mf6.ModflowGwfwel(gwf, stress_period_data=spd,
-                                   pname='wel-dewater', filename='dewater.wel',
-                                   boundnames=True, auto_flow_reduce=0.1, print_input=True)
-    wel.ts.initialize(filename='dewater0.ts', timeseries=tsdata,
-                      time_series_namerecord=[tsnames[0]],
-                      interpolation_methodrecord=[tsmethods[0]])
-    for i in range(1, len(neighbour_lrc)):
-        wel.ts.append_package(filename=f'dewater{i}.ts', timeseries=tsdata,
-                              time_series_namerecord=[tsnames[i]],
-                              interpolation_methodrecord=[tsmethods[i]])
-    wel.ts.set_all_data_external()
+    wel = flopy.mf6.ModflowGwfwel(
+        gwf, stress_period_data=spd,
+        pname='wel-dewater', filename='dewater.wel',
+        auxiliary='tracer', boundnames=True,
+        auto_flow_reduce=0.1, print_input=True,
+    )
     wel.set_all_data_external()
     return wel
 
@@ -204,30 +194,19 @@ def build_wells_mar(sim, pitcells, rate):
     mar_cells = [(0, i, mar_j)
                  for i in range(mar_skip // 2, gwf.dis.nrow.data, mar_skip)]
 
-    tsnames = [f"mar{i}" for i in range(len(mar_cells))]
-    tsmethods = ['stepwise'] * len(mar_cells)
-    tsdata = [(0.0, 0.0), (1.0, rate), (3650, 0.0), (1e30, 0.0)]
+    nper = sim.tdis.nper.get_data()
+    names = [f"mar{i}" for i in range(len(mar_cells))]
 
-    spd = {1: [(cell, nm, nm) for cell, nm in zip(mar_cells, tsnames)]}
+    # SP 1: MAR active; SP 2+ wells off
+    spd = {1: [(cell, rate, 0.0, nm) for cell, nm in zip(mar_cells, names)]}
+    for kper in range(2, nper):
+        spd[kper] = [(cell, 0.0, 0.0, nm) for cell, nm in zip(mar_cells, names)]
 
-    centx, centy = mg.xcellcenters, mg.ycellcenters
-    df = pd.DataFrame(spd[1]).iloc[:, :-1].rename(columns={1: "name"})
-    df[["k", "i", "j"]] = df.iloc[:, 0].apply(lambda x: pd.Series(x))
-    df["x"] = [centx[i, j] for i, j in zip(df.i, df.j)]
-    df["y"] = [centy[i, j] for i, j in zip(df.i, df.j)]
-    # df.iloc[:, 1:].to_csv("location_mar_wells.csv", index=False)
-
-    wel = flopy.mf6.ModflowGwfwel(gwf, stress_period_data=spd,
-                                   pname='wel-mar', filename='mar.wel',
-                                   boundnames=True, print_input=True)
-    wel.ts.initialize(filename='mar0.ts', timeseries=tsdata,
-                      time_series_namerecord=[tsnames[0]],
-                      interpolation_methodrecord=[tsmethods[0]])
-    for i in range(1, len(mar_cells)):
-        wel.ts.append_package(filename=f'mar{i}.ts', timeseries=tsdata,
-                              time_series_namerecord=[tsnames[i]],
-                              interpolation_methodrecord=[tsmethods[i]])
-    wel.ts.set_all_data_external()
+    wel = flopy.mf6.ModflowGwfwel(
+        gwf, stress_period_data=spd,
+        pname='wel-mar', filename='mar.wel',
+        auxiliary='tracer', boundnames=True, print_input=True,
+    )
     wel.set_all_data_external()
     return wel
 
