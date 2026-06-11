@@ -9,8 +9,20 @@ import matplotlib.patches as patches
 
 from flopy.utils.gridintersect import GridIntersect
 from shapely.geometry import Polygon
+from pathlib import Path
 
 delr = 20
+
+def tidy_array(fpath):
+    # read unordered txt file
+    with open(fpath, 'r') as f:
+        data = f.read().split()
+    data = [float(x) for x in data]
+    arr = np.array(data)
+    arr = arr.flatten()
+    #arr = arr.reshape(sr.ncpl)
+    np.savetxt(fpath, arr, fmt='%1.6e')
+    return
 
 def prep_bins(dest_path, src_path=os.path.join('bin'), get_only=[]):
     """copy the executables from the bin folder to the destination folder
@@ -179,6 +191,7 @@ def build_wells_dewater(sim, pitcells, rate):
         pname='wel-dewater', filename='dewater.wel',
         auxiliary='tracer', boundnames=True,
         auto_flow_reduce=0.1, print_input=True,
+        afrcsv_filerecord='dewater.autoreduce.csv'
     )
     wel.set_all_data_external()
     return wel
@@ -211,7 +224,7 @@ def build_wells_mar(sim, pitcells, rate):
     return wel
 
 
-def specify_tsf_cells(col_center=65, row_center=30, half_ncol=2, half_nrow=1, conc=1.0):
+def specify_tsf_cells(col_center=60, row_center=20, half_ncol=3, half_nrow=4, conc=1.0):
     """Return CNC-format list [((layer, row, col), conc), ...] for the TSF footprint.
 
     Default location is northeast of the pit — upgradient so AMD migrates westward
@@ -242,6 +255,49 @@ def sout_to_array(df, col, idom):
     return arr
 
 
+def proc_ph_at_gde(wd='.', drn_pname='drn-gde', fname='gde_ph.csv'):
+    """Minimum pH across the GDE drain footprint per sout output time.
+
+    The management criterion for the tutorials is 'pH at the GDE stays
+    above the threshold', which is equivalent to min(pH) over all drain
+    cells staying above it. Writes the result to `ws/gde_ph.csv` so it
+    can serve as a PEST observation file (one row per output time).
+
+    Parameters
+    ----------
+    ws   : str
+        model folder containing sout.csv; the output CSV is written here
+    gwf  : flopy GWF model holding the DRN package
+    drn_pname : str
+        name of the GDE drain package
+    fname : str
+        name of the output CSV written into ws
+
+    Returns
+    -------
+    DataFrame indexed by time_d with columns:
+        ph_min      — minimum pH over the drain cells
+        row, col    — location of the minimum (the 'worst' cell)
+    """
+    sim = flopy.mf6.MFSimulation.load(sim_ws=wd, verbosity_level=0)
+    # load flow model
+    gwf = sim.get_model('gwf')
+    sout  = pd.read_csv(os.path.join(wd, 'sout.csv'))
+    spd   = gwf.get_package(drn_pname).stress_period_data.get_data()[0]
+    # sout.csv row/col are 1-based; flopy cellids are 0-based
+    cells = pd.DataFrame([(r + 1, c + 1) for (_, r, c) in spd['cellid']],
+                         columns=['row', 'col'])
+    gde   = sout.merge(cells, on=['row', 'col'])
+    idx   = gde.groupby('time_d')['solution_ph'].idxmin()
+    out   = (gde.loc[idx, ['time_d', 'solution_ph']]
+                .rename(columns={'solution_ph': 'ph_min',
+                                 'time_d': 'time'
+                                 })
+                .set_index('time'))
+    out.to_csv(os.path.join(wd, fname))
+    return fname, out
+
+
 def build_utlobs(gwf, pitcells):
     """Build OBS utility package for head monitoring at pit and MAR wells."""
     obs_layer = 0
@@ -257,3 +313,110 @@ def build_utlobs(gwf, pitcells):
                                     filename=f"{gwf.name}.obs",
                                     pname="obs-head",
                                     continuous=continuous)
+
+def get_input_filenames(tag, template_ws=os.path.join('pest','pst_template'), extension='.txt', startswith = False):
+    """
+    Get the input filenames from the template workspace
+
+    Parameters:
+        tag: str, tag to search for
+        template_ws: str, template workspace
+    """
+    if startswith:
+        files = [
+            f for f in os.listdir(template_ws)
+            if f.lower().startswith(tag) and f.endswith(extension)
+            ]   
+    
+    else:
+        files = [
+            f for f in os.listdir(template_ws)
+            if tag in f.lower() and f.endswith(extension)
+            ]
+    files = sorted(files, key=extract_layer_number)
+    return files 
+
+def extract_layer_number(filename):
+    import re
+    match = re.search(r'layer(\d+)', filename)
+    return int(match.group(1)) if match else float('inf')
+
+def copy_parameterized_transport_files(ws=".",
+                                parameterized_species="h",
+                                dsp_par =  [], 
+                                mst_par = ['porosity']
+                                 ):
+
+    def flatten(xss):
+        return [x for xs in xss for x in xs]
+    
+    sim = flopy.mf6.MFSimulation.load(sim_ws=ws, verbosity_level=0)
+    species = sim.model_names[1:]
+    species.remove(parameterized_species)
+
+    tag = []
+
+    for e, par in enumerate(dsp_par):
+        tag.append(f"dsp_{par}_")
+
+    for  e, par in enumerate(mst_par):
+         tag.append(f"mst_{par}_")
+         
+    fnames_to_copy = [get_input_filenames(f"{parameterized_species}.{t}", template_ws=ws, startswith=True) for t in tag]
+    fnames_to_copy = flatten(fnames_to_copy)
+
+    print(
+        f"Warning: copying files with tag: {', '.join(tag)} from species: {parameterized_species.upper()} to the following species: "
+        f"{', '.join(sp.capitalize() for sp in species if sp != parameterized_species)}"
+    )
+
+    for sp in species:
+        fnames_to_replace = [get_input_filenames(f"{sp}.{t}", template_ws=ws, startswith=True) for t in tag]
+        fnames_to_replace = flatten(fnames_to_replace)
+        assert sorted([x.split('.')[1] for x in fnames_to_copy]) == sorted([x.split('.')[1] for x in fnames_to_replace]), f'list of files to replace and to copy does not contain the same files names '
+        # sort fnames_to_copy and fnames_to_replace according to the assert above
+        fnames_to_copy = [x for _, x in sorted(zip([x.split('.')[1] for x in fnames_to_copy], fnames_to_copy))]
+        fnames_to_replace = [x for _, x in sorted(zip([x.split('.')[1] for x in fnames_to_replace], fnames_to_replace))]
+        fileszipped = list(zip(fnames_to_copy, fnames_to_replace))
+        [shutil.copyfile(Path(ws, f[0]), Path(ws, f[1])) for f in fileszipped];
+    return fileszipped
+
+def extract_hds_arrays_and_list_dfs():
+    """
+    Extract head data arrays and list budget dataframes from MODFLOW output files.
+    """
+
+    hds = flopy.utils.HeadFile("gwf.hds")
+    for it,t in enumerate(hds.get_times()):
+        d = hds.get_data(totim=t)
+        for k,dlay in enumerate(d):
+            np.savetxt("hdslay{0}_t{1}.txt".format(k+1,it+1),d[k,:,:],fmt="%15.6E")
+
+    lst = flopy.utils.Mf6ListBudget("gwf.lst")
+    inc,cum = lst.get_dataframes(diff=True,start_datetime=None)
+    inc.columns = inc.columns.map(lambda x: x.lower().replace("_","-"))
+    cum.columns = cum.columns.map(lambda x: x.lower().replace("_", "-"))
+    inc.index.name = "totim"
+    cum.index.name = "totim"
+    #one lil trick to help with opt later
+    rd = pd.read_csv("dewater.autoreduce.csv")
+    summed = rd.groupby("time").sum()["wel-reduction"].to_dict()
+    inc["abstotwel"] = np.abs(inc["wel"]) + np.abs(inc["wel2"])
+    cum["abstotwel"] = np.abs(cum["wel"]) + np.abs(cum["wel2"])
+    inc["totwel"] = inc["wel"] + inc["wel2"]
+    cum["totwel"] = cum["wel"] + cum["wel2"]
+    inc["wel-reduction"] = 0.0
+    for t,v in summed.items():
+        inc.loc[t,"wel-reduction"] = v
+    inc.to_csv("inc.csv")
+    cum.to_csv("cum.csv")
+    return
+
+def test_extract_hds_arrays(d):
+    """
+    Test the extraction of head data arrays.
+    """
+    cwd = os.getcwd()
+    os.chdir(d)
+    extract_hds_arrays_and_list_dfs()
+    os.chdir(cwd)
