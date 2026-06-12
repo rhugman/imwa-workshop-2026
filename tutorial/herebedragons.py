@@ -186,11 +186,14 @@ def build_wells_dewater(sim, pitcells, rate):
     for kper in range(2, nper):
         spd[kper] = [(tuple(cell), 0.0, 0.0, nm) for cell, nm in zip(neighbour_lrc, names)]
 
+    # print_input must stay OFF: PRINT_INPUT + external list files triggers heap
+    # corruption in libmf6's table writer (bndext write_list) and random aborts
     wel = flopy.mf6.ModflowGwfwel(
         gwf, stress_period_data=spd,
         pname='wel-dewater', filename='dewater.wel',
         auxiliary='tracer', boundnames=True,
-        auto_flow_reduce=0.1, print_input=True,
+        auto_flow_reduce=0.1,
+        print_input=True,
         afrcsv_filerecord='dewater.autoreduce.csv'
     )
     wel.set_all_data_external()
@@ -215,16 +218,18 @@ def build_wells_mar(sim, pitcells, rate):
     for kper in range(2, nper):
         spd[kper] = [(cell, 0.0, 0.0, nm) for cell, nm in zip(mar_cells, names)]
 
+    # print_input must stay OFF — see note in build_wells_dewater
     wel = flopy.mf6.ModflowGwfwel(
         gwf, stress_period_data=spd,
         pname='wel-mar', filename='mar.wel',
-        auxiliary='tracer', boundnames=True, print_input=True,
+        print_input=True,
+        auxiliary='tracer', boundnames=True,
     )
     wel.set_all_data_external()
     return wel
 
 
-def specify_tsf_cells(col_center=60, row_center=20, half_ncol=3, half_nrow=4, conc=1.0):
+def specify_tsf_cells(col_center=20, row_center=45, half_ncol=2, half_nrow=3, conc=1.0):
     """Return CNC-format list [((layer, row, col), conc), ...] for the TSF footprint.
 
     Default location is northeast of the pit — upgradient so AMD migrates westward
@@ -252,6 +257,7 @@ def sout_to_array(df, col, idom):
     """
     arr = df.pivot(index='row', columns='col', values=col).values.astype(float)
     arr[idom <= 0] = np.nan
+    arr[arr >= 1e29] = np.nan   # PhreeqcRM inactive-cell fill (e.g. no-react pit cells)
     return arr
 
 
