@@ -19,5 +19,5 @@ dependencies:
   - pip:
       - -e ./dependencies/flopy
       - -e ./dependencies/pyemu
-      # - -e ./dependencies/mf6rtm
+      - -e ./dependencies/mf6rtm
       - pypestutils
