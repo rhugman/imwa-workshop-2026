@@ -229,7 +229,7 @@ def build_wells_mar(sim, pitcells, rate):
     return wel
 
 
-def specify_tsf_cells(col_center=20, row_center=45, half_ncol=2, half_nrow=3, conc=1.0):
+def specify_tsf_cells(col_center=20, row_center=40, half_ncol=3, half_nrow=2, conc=1.0):
     """Return CNC-format list [((layer, row, col), conc), ...] for the TSF footprint.
 
     Default location is northeast of the pit — upgradient so AMD migrates westward
@@ -304,6 +304,51 @@ def proc_ph_at_gde(wd='.', drn_pname='drn-gde', fname='gde_ph.csv'):
     return fname, out
 
 
+def proc_chem_at_wells(wd='.', wel_pnames=('wel-dewater', 'wel-mar'), prefix='chemwell'):
+    """Per-species well-cell water chemistry, one wide CSV per quantity.
+
+    Writes `<prefix>_<species>.csv` with columns named `<species>_i:<i>_j:<j>`
+    (one per well cell, 0-based) and time as the index; returns {species: DataFrame}.
+    """
+    sim  = flopy.mf6.MFSimulation.load(sim_ws=wd, verbosity_level=0)
+    gwf  = sim.get_model('gwf')
+    sout = pd.read_csv(os.path.join(wd, 'sout.csv'))
+
+    frames = []
+    for p in wel_pnames:
+        spd = gwf.get_package(p).stress_period_data.get_data()[1]
+        ids = pd.DataFrame({
+            'ij':  [f"i:{r}_j:{c}" for (_, r, c) in spd['cellid']],
+            'row': [r + 1 for (_, r, c) in spd['cellid']],
+            'col': [c + 1 for (_, r, c) in spd['cellid']],
+        })
+        frames.append(sout.merge(ids, on=['row', 'col']))
+    well = pd.concat(frames, ignore_index=True)
+
+    locators     = {'time_d', 'cell', 'layer', 'row', 'col', 'ij'}
+    species_cols = [c for c in well.columns if c not in locators]
+    def short(col):
+        for pre in ('solution_total_molality_', 'solution_', 'equilibrium_phases_'):
+            if col.startswith(pre):
+                col = col[len(pre):]
+                break
+        return col.lower().replace('(', '').replace(')', '')
+
+    sel_cols = [c for c in species_cols if short(c) in ['ph', 'ca', 's6', 'k', 'fe2', 'fe3',
+                                                 'cl', 'ca', 'c4', 'al', 'mg', 'na']]
+
+    out = {}
+    for col in sel_cols:
+        name = short(col)
+        df = well.pivot_table(index='time_d', columns='ij', values=col)
+        df = df.mask(df >= 1e29)
+        df.columns = [f"{name}_{ij}" for ij in df.columns]
+        df.index.name = 'time'
+        df.to_csv(os.path.join(wd, f'{prefix}_{name}.csv'))
+        out[name] = df
+    return out
+
+
 def build_utlobs(gwf, pitcells):
     """Build OBS utility package for head monitoring at pit and MAR wells."""
     obs_layer = 0
@@ -349,7 +394,7 @@ def extract_layer_number(filename):
 
 def copy_parameterized_transport_files(ws=".",
                                 parameterized_species="h",
-                                dsp_par =  [], 
+                                dsp_par =  ['alh'], 
                                 mst_par = ['porosity']
                                  ):
 
