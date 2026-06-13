@@ -217,3 +217,31 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Workshop: throwaway PEST run dirs
+tutorial/master_*/
+tutorial/priormc/
+tutorial/pst_template*/
+tutorial/worker_*/
+tutorial/*.chem.txt
+tutorial/*.log.txt
+tutorial/_ci_*.ipynb
+
+tutorial/model/**/mf6
+tutorial/model/**/mf6.exe
+tutorial/model/**/libmf6.*
+tutorial/model/**/pestpp-*
+tutorial/model/**/mp7
+tutorial/model/**/mp7.exe
+tutorial/model/**/*.dylib
+tutorial/model/**/*.so
+tutorial/model/**/*.dll
+tutorial/model/**/*.exe
+
+# Regenerable model outputs -- ship inputs only, not these
+tutorial/model/**/*.cbb
+tutorial/model/**/*.cbc
+tutorial/model/**/*.lst
+tutorial/model/**/*.hds
+tutorial/model/**/*.ucn
+tutorial/model/**/sout.csv
