@@ -6,6 +6,13 @@
 # left in place (with their error outputs) for inspection / CI artifact upload.
 # To run the notebooks at full size, just open and run them normally in Jupyter.
 set -euo pipefail
+
+# macOS CI: a fresh env solve links two libomp.dylib copies (mf6/phreeqcrm vs
+# numpy/scipy), and the second to load aborts with "OMP: Error #15", killing the
+# kernel mid-mf6rtm run. This tolerates the duplicate. CI-only: the tutorials
+
+export KMP_DUPLICATE_LIB_OK="${KMP_DUPLICATE_LIB_OK:-TRUE}"
+
 here="$(cd "$(dirname "$0")" && pwd)"          # tests/
 cd "$here/../tutorial"
 

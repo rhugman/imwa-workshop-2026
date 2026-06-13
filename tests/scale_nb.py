@@ -1,6 +1,6 @@
 """Write a size-scaled copy of a workshop notebook for fast CI testing.
 
-The tutorial notebooks are left untouched (students see the real values).
+The tutorial notebooks are left untouched.
 This rewrites only a throwaway copy, shrinking the expensive ensemble/iteration
 sizes so the whole 00->05 chain runs quickly in CI:
 
@@ -28,7 +28,9 @@ SUBS = [
 
 
 def main(src, dst):
-    nb = json.load(open(src))
+    # notebooks are UTF-8; be explicit so Windows doesn't default to cp1252
+    with open(src, encoding="utf-8") as f:
+        nb = json.load(f)
     for cell in nb["cells"]:
         if cell["cell_type"] != "code":
             continue
@@ -38,7 +40,8 @@ def main(src, dst):
         cell["source"] = s.splitlines(keepends=True)
         cell["outputs"] = []
         cell["execution_count"] = None
-    json.dump(nb, open(dst, "w"), indent=1)
+    with open(dst, "w", encoding="utf-8") as f:
+        json.dump(nb, f, indent=1, ensure_ascii=False)
 
 
 if __name__ == "__main__":
