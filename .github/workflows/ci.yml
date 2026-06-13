@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+jobs:
+  notebooks:
+    name: notebooks (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    defaults:
+      run:
+        shell: bash -el {0}   # login shell so the micromamba env stays activated
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up conda env (imwa2026)
+        uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-file: environment.yml
+          cache-environment: true
+
+      - name: Install test dependencies
+        run: python -m pip install -r tests/requirements-test.txt
+
+      - name: Make solver/PEST binaries executable (unix)
+        if: runner.os != 'Windows'
+        run: chmod +x tutorial/bin/linux/* tutorial/bin/mac/* || true
+
+      - name: Put the OS-specific binaries on PATH
+        run: |
+          case "${{ runner.os }}" in
+            Linux)   echo "$PWD/tutorial/bin/linux" >> "$GITHUB_PATH" ;;
+            macOS)   echo "$PWD/tutorial/bin/mac"   >> "$GITHUB_PATH" ;;
+            Windows) echo "$PWD/tutorial/bin/win"   >> "$GITHUB_PATH" ;;
+          esac
+
+      - name: Run notebooks (scaled, in order)
+        run: ./tests/run_tests.sh
+
+      - name: Upload executed (scaled) notebooks on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: executed-notebooks-${{ matrix.os }}
+          path: tutorial/_ci_*.ipynb
+          if-no-files-found: ignore
