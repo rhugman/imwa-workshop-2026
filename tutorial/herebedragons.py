@@ -229,7 +229,7 @@ def build_wells_mar(sim, pitcells, rate):
     return wel
 
 
-def specify_tsf_cells(col_center=50, row_center=50, half_ncol=5, half_nrow=5, conc=1.0):
+def specify_tsf_cells(col_center=40, row_center=30, half_ncol=3, half_nrow=4, conc=1.0):
     """Return CNC-format list [((layer, row, col), conc), ...] for the TSF footprint.
 
     Default location is northeast of the pit — upgradient so AMD migrates westward
@@ -300,8 +300,10 @@ def proc_ph_at_gde(wd='.', drn_pname='drn-gde', fname='gde_ph.csv'):
                                  })
                 .set_index('time'))
     out.to_csv(os.path.join(wd, fname))
-    return fname, out
 
+    #save abs min pH over sim time
+    np.savetxt(os.path.join(wd, "_min_ph.txt"), out.min())
+    return fname, out
 
 def proc_chem_at_wells(wd='.', wel_pnames=('wel-dewater', 'wel-mar'), prefix='chemwell'):
     """Per-species well-cell water chemistry, one wide CSV per quantity.
@@ -314,6 +316,7 @@ def proc_chem_at_wells(wd='.', wel_pnames=('wel-dewater', 'wel-mar'), prefix='ch
     sout = pd.read_csv(os.path.join(wd, 'sout.csv'))
 
     frames = []
+
     for p in wel_pnames:
         spd = gwf.get_package(p).stress_period_data.get_data()[1]
         ids = pd.DataFrame({
