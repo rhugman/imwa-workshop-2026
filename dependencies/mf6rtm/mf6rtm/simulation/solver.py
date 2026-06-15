@@ -541,13 +541,13 @@ class Mf6RTM(object):
                 concs -= self.charge_offset
             elif self.min_concentration is not None:
                 floor_m3 = utils.concentration_l_to_m3(self.min_concentration)
-                below = concs < floor_m3
-                if below.any():
-                    print(
-                        f"  [{component}] {below.sum()} cell(s) below "
-                        f"min_concentration (min={utils.concentration_m3_to_l(concs[below].min()):.2e} mol/L); "
-                        f"clipping to {self.min_concentration:.2e} mol/L"
-                    )
+                # below = concs < floor_m3
+                # if below.any():
+                #     print(
+                #         f"  [{component}] {below.sum()} cell(s) below "
+                #         f"min_concentration (min={utils.concentration_m3_to_l(concs[below].min()):.2e} mol/L); "
+                #         f"clipping to {self.min_concentration:.2e} mol/L"
+                #     )
                 np.clip(concs, floor_m3, None, out=concs)
             mf6_conc_m3_array[i] = concs
 
@@ -606,6 +606,8 @@ class Mf6RTM(object):
         print("Starting Solution at {0}".format(sim_start.strftime(DT_FMT)))
         ctime = self._set_ctime()
         etime = self._set_etime()
+        # diffmask must exist before the first selected-output write
+        self.diffmask = np.ones(self.nxyz)
         while ctime < etime:
             # self iteration counter
             self.set_kiter()
@@ -633,7 +635,10 @@ class Mf6RTM(object):
                         fname='_features.csv'
                     )
 
-                if ctime == 0.0:
+                # On the first reactive step (no previous concentrations yet) react
+                # every cell. Gating on previous-conc existence rather than ctime==0
+                # keeps this correct when user-defined tsteps skip the first step(s).
+                if not self._check_previous_conc_exists():
                     self.diffmask = np.ones(self.nxyz)
                 else:
                     diffmask = get_conc_change_mask(
