@@ -229,18 +229,17 @@ def build_wells_mar(sim, pitcells, rate):
     return wel
 
 
-def specify_tsf_cells(col_center=20, row_center=40, half_ncol=3, half_nrow=2, conc=1.0):
+def specify_tsf_cells(col_center=50, row_center=50, half_ncol=5, half_nrow=5, conc=1.0):
     """Return CNC-format list [((layer, row, col), conc), ...] for the TSF footprint.
 
     Default location is northeast of the pit — upgradient so AMD migrates westward
     through the dewatering zone toward the GDE.
     """
     cells = []
-    for row in range(row_center - half_nrow, row_center + half_nrow + 1):
-        for col in range(col_center - half_ncol, col_center + half_ncol + 1):
+    for row in range(row_center - half_nrow, row_center + half_nrow ):
+        for col in range(col_center - half_ncol, col_center + half_ncol ):
             cells.append(((0, row, col), conc))
     return cells
-
 
 def sout_to_array(df, col, idom):
     """Pivot a sout.csv time-slice into a 2-D array ready for PlotMapView.plot_array().
