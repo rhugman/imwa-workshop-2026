@@ -232,8 +232,9 @@ def build_wells_mar(sim, pitcells, rate):
 def specify_tsf_cells(col_center=40, row_center=30, half_ncol=3, half_nrow=4, conc=1.0):
     """Return CNC-format list [((layer, row, col), conc), ...] for the TSF footprint.
 
-    Default location is northeast of the pit — upgradient so AMD migrates westward
-    through the dewatering zone toward the GDE.
+    Default location is northwest of the pit — downgradient (between the pit and the GDE),
+    so AMD migrates westward toward the GDE under natural flow; the pit's cone of depression
+    can pull it back east during dewatering.
     """
     cells = []
     for row in range(row_center - half_nrow, row_center + half_nrow ):
