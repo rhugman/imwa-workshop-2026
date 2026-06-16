@@ -58,3 +58,19 @@ jobs:
       - name: Run notebooks (scaled, in order)
         run: ./tests/run_tests.sh
 
+      - name: Dump reactive-run failure detail
+        if: failure()
+        run: |
+          echo "===== resolved package versions ====="
+          python -m pip list 2>/dev/null | grep -iE "modflowapi|xmipy|phreeqcrm|flopy|numpy|pyemu|mf6rtm" || true
+          cd tutorial/model/reactive || { echo "no model/reactive dir built"; exit 0; }
+          echo "===== running mf6rtm directly (stdout+stderr, not via kernel) ====="
+          set +e
+          mf6rtm > _mf6rtm.out 2>&1
+          echo "---- mf6rtm exit code: $? ----"
+          tail -80 _mf6rtm.out
+          echo "===== mfsim.lst (tail) ====="
+          tail -50 mfsim.lst 2>/dev/null || echo "(no mfsim.lst -> died before MODFLOW init)"
+          echo "===== mfsim.stdout (tail) ====="
+          tail -50 mfsim.stdout 2>/dev/null || true
+
