@@ -2,22 +2,25 @@ name: imwa2026
 channels:
   - conda-forge
 dependencies:
-  - python=3.12
+  - python==3.12.13
   - pip
-  - pandas>=2.0
-  - numpy>=1.25 
-  - matplotlib 
-  - jupyter 
-  - notebook
-  - geopandas
-  - rtree
-  - pyproj>=2.0
-  - pyshp
-  - scikit-learn
-  - shapely
-  - openpyxl
+  - pandas==3.0.3
+  - numpy==2.4.6
+  - matplotlib==3.10.9
+  - jupyter==1.1.1
+  - notebook==7.5.7
+  - geopandas==1.1.3
+  - rtree==1.4.1
+  - pyproj==3.7.2
+  - pyshp==3.0.9
+  - scikit-learn==1.9.0
+  - shapely==2.1.2
+  - openpyxl==3.1.5
   - pip:
+      - pypestutils==0.3.0
+      - modflowapi==0.2.0
+      - xmipy==1.5.0
+      - phreeqcrm==0.0.18
       - -e ./dependencies/flopy
       - -e ./dependencies/pyemu
       - -e ./dependencies/mf6rtm
-      - pypestutils
