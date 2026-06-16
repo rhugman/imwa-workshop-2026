@@ -4495,10 +4495,7 @@ def prep_for_gpr(pst_fname,input_fnames,output_fnames,gpr_t_d="gpr_template",t_d
 
     #write a template file
     tpl_fname = os.path.join(gpr_t_d,"gpr_input.csv.tpl")
-    with open(tpl_fname,'w') as f:
-        f.write("ptf ~\nparnme,parval1\n")
-        for input_name in input_names:
-            f.write("{0},~  {0}   ~\n".format(input_name))
+    pyemu.pst_utils.csv_tpl_from_parnames(input_names, tpl_fname)
     other_pars = list(set(pst.par_names)-set(input_names))
     aux_tpl_fname = None
 
@@ -4506,19 +4503,14 @@ def prep_for_gpr(pst_fname,input_fnames,output_fnames,gpr_t_d="gpr_template",t_d
 
         aux_tpl_fname = os.path.join(gpr_t_d,"aux_par.csv.tpl")
         print("writing aux par tpl file: ",aux_tpl_fname)
-        with open(aux_tpl_fname,'w') as f:
-            f.write("ptf ~\n")
-            for input_name in other_pars:
-                f.write("{0},~  {0}   ~\n".format(input_name))
+        pyemu.pst_utils.csv_tpl_from_parnames(other_pars, aux_tpl_fname, header=None)
     #write an ins file
     ins_fname = os.path.join(gpr_t_d,"gpr_output.csv.ins")
-    with open(ins_fname,'w') as f:
-        f.write("pif ~\nl1\n")
-        for output_name in output_names:
-            if include_emulated_std_obs:
-                f.write("l1 ~,~ !{0}! ~,~ !{0}_gprstd!\n".format(output_name))
-            else:
-                f.write("l1 ~,~ !{0}!\n".format(output_name))
+    if include_emulated_std_obs:
+        entries = [(o, "{0}_gprstd".format(o)) for o in output_names]
+    else:
+        entries = list(output_names)
+    pyemu.pst_utils.csv_ins_from_obsnames(entries, ins_fname)
     tpl_list = [tpl_fname]
     if aux_tpl_fname is not None:
         tpl_list.append(aux_tpl_fname)
@@ -4540,7 +4532,7 @@ def prep_for_gpr(pst_fname,input_fnames,output_fnames,gpr_t_d="gpr_template",t_d
         # why is it getting so strict?!  isn't python duck-typed?
         if col in gpst.observation_data.columns and \
                 gpst.observation_data.dtypes[col] != pst.observation_data.dtypes[col]:
-            gpst.observation_data[col] = gpst.obsveration_data[col].astype(pst.observation_data.dtypes[col])
+            gpst.observation_data[col] = gpst.observation_data[col].astype(pst.observation_data.dtypes[col])
         gpst.observation_data.loc[output_names,col] = pst.observation_data.loc[output_names,col].values
     if include_emulated_std_obs:
         stdobs = [o for o in gpst.obs_names if o.endswith("_gprstd")]
@@ -4552,7 +4544,7 @@ def prep_for_gpr(pst_fname,input_fnames,output_fnames,gpr_t_d="gpr_template",t_d
     frun_lines = inspect.getsource(gpr_forward_run)
     getfxn_lines = inspect.getsource(get_gpr_model_dict)
     emulfxn_lines = inspect.getsource(emulate_with_gpr)
-    with open(os.path.join(gpr_t_d, "forward_run.py"), 'w') as f:
+    with open(os.path.join(gpr_t_d, "forward_run.py"), 'w', encoding="utf-8") as f:
         f.write("\n")
         for import_name in ["pandas as pd","os","pickle","numpy as np"]:
             f.write("import {0}\n".format(import_name))
@@ -4896,18 +4888,16 @@ def gpr_runstore_forward_run(ws='.', emu_file="gpr_emulator.pkl", pst_name="gpr"
 
 def dsi_runstore_forward_run(ws='.', pst_name="dsi"):
     import os
+    import re
+    import pickle
     from pyemu.utils.helpers import RunStor
+    emu_file = os.path.join(ws, "dsi.pickle")
     try:
-        from pyemu.emulators import DSIAE
-        dsi = DSIAE.load(os.path.join(ws,"dsi.pickle"))
-        latent_dim = dsi.latent_dim
-    except:
-        try:
-            from pyemu.emulators import DSI
-            dsi = DSI.load(os.path.join(ws,"dsi.pickle"))
-            latent_dim = dsi.s.shape[0]
-        except Exception as e:
-            raise Exception("failed to load DSI or DSIAE from dsi.pickle:{0}".format(str(e)))
+        with open(emu_file, "rb") as f:
+            dsi = pickle.load(f)
+    except Exception as e:
+        raise Exception("failed to load emulator from {0}: {1}".format(emu_file, str(e)))
+    latent_dim = dsi.latent_dim
 
     fname = os.path.join(ws, f"{pst_name}.rns")
     if not os.path.exists(fname):
@@ -4916,9 +4906,21 @@ def dsi_runstore_forward_run(ws='.', pst_name="dsi"):
     rs = RunStor(fname)
     df = rs.get_data()
 
-    # sort par_names to match latent dimension order
-    # sort by the integer after the prefix
-    par_names.sort(key=lambda x: int(x.split("_")[-1]))
+    # sort par_names to match latent dimension order.
+    # predict() consumes pvals positionally (pmat @ pvals.T / decoder), so column i
+    # must be latent dimension i.  The latent index is the trailing integer of the
+    # parameter name; the regex handles both "p_3"/"sv_3" and "dsi_par0000", the
+    # latter of which int(x.split("_")[-1]) cannot parse.
+    def _latent_index(pname):
+        m = re.search(r"(\d+)$", pname)
+        if m is None:
+            raise ValueError(
+                "could not parse latent index (trailing integer) "
+                "from parameter name: {0}".format(pname)
+            )
+        return int(m.group(1))
+
+    par_names.sort(key=_latent_index)
 
     pvals = df.loc[:,par_names]
     assert pvals.shape[1] == latent_dim, "number of parameters in runstor does not match DSI latent dimension"
@@ -4933,33 +4935,18 @@ def dsi_runstore_forward_run(ws='.', pst_name="dsi"):
 
 def dsi_file_forward_run(emu_file="dsi.pickle", input_file="dsi_pars.csv", output_file="dsi_sim_vals.csv"):
     import os
+    import pickle
     import pandas as pd
     import traceback
-    
-    try:
-        # Try loading as DSIAE first, then DSI
-        try:
-            from pyemu.emulators import DSIAE, DSI
-        except ImportError:
-            # Should be available in standard installation
-            raise ImportError("pyemu.emulators.DSI and/or DSIAE could not be imported")
 
-        emu = None
-        # Try DSIAE.load (checks for folder/zip etc)
+    try:
         try:
-             emu = DSIAE.load(emu_file)
-        except:
-             pass
-        
-        # If not loaded, try DSI.load (standard pickle)
-        if emu is None:
-             try:
-                 emu = DSI.load(emu_file)
-             except Exception as e:
-                 raise Exception(f"Failed to load emulator from {emu_file}. Tried DSIAE.load and DSI.load. Error: {e}")
+            with open(emu_file, "rb") as f:
+                emu = pickle.load(f)
+        except Exception as e:
+            raise Exception(f"Failed to load emulator from {emu_file}: {e}")
 
         if not os.path.exists(input_file):
-        # ...
              raise FileNotFoundError(f"Input file {input_file} not found")
              
         input_df = pd.read_csv(input_file, index_col=0)
@@ -4995,123 +4982,6 @@ def dsi_forward_run(pvals,dsi,write_csv=False):
     if write_csv:
         sim_vals.to_csv("dsi_sim_vals.csv")
     return sim_vals
-
-def dsivc_forward_run(md_ies=".",ies_exe_path="pestpp-ies",num_workers=1):
-    import pandas as pd
-    import pyemu
-    import os
-    import pickle
-    from pyemu.utils.os_utils import PortManager
-
-    # load the dsi pest control file
-    pst_dsi = pyemu.Pst(os.path.join(md_ies,"dsi.pst"))
-    noptmax = pst_dsi.control_data.noptmax
-    if noptmax==-1:
-        noptmax=0
-
-    try:
-        os.remove("dsi.noise.jcb")
-    except:
-        print("dsi.noise.jcb not found, continuing...")
-    try:
-        os.remove("dsi.stack.csv")
-    except:
-        print("dsi.stack.csv not found, continuing...")
-    try:
-        os.remove("dsi.stack_stats.csv")
-    except:
-        print("dsi.stack_stats.csv not found, continuing...")
-    try:
-        os.remove(f"dsi.{noptmax}.obs.jcb")
-    except:
-        print(f"dsi.{noptmax}.obs.jcb not found, continuing...")
-
-    # load decvars
-    decvars = pd.read_csv(os.path.join(md_ies, "dsivc_pars.csv"),index_col=0)
-    assert decvars.shape[0]>0, "no decvars found in dsivc_pars.csv"
-
-
-
-    # update the decavar obs values in the observation data
-    obs = pst_dsi.observation_data
-    assert obs.loc[decvars.index].shape[0] == decvars.shape[0], "not all decvars found in obs data"
-    assert all(obs.loc[decvars.index].weight > 0.0), "decvar weights should be > 0.0"
-    obs.loc[decvars.index,"obsval"] = decvars.values
-
-    # update the obs+noise file with the decvar values to ensure NO NOISE on the decvars
-    try:
-        noise = pyemu.ObservationEnsemble.from_binary(pst_dsi,os.path.join(md_ies,"dsi.obs+noise.jcb"))
-    except:
-         noise = pyemu.ObservationEnsemble.from_csv(pst_dsi,os.path.join(md_ies,"dsi.obs+noise.csv"))
-    # check that all of decvars.index are in noise.columns
-    assert len([i for i in decvars.index if i not in noise.columns.tolist()]) == 0, "some decvars not in noise columns"
-    # update columns in noise if column name in decvars.index
-    for col in decvars.index:
-        noise.loc[:,col] = noise.loc[:,col].astype(float)
-        noise.loc[:,col] = decvars.loc[col].values[0]
-    # record noise 
-    noise.to_binary(os.path.join(md_ies,"dsi.noise.jcb"))
-    # make sure pestpp options 
-    pst_dsi.pestpp_options["ies_observation_ensemble"] = "dsi.noise.jcb"
-    # rewrite the dsi.pst file 
-    pst_dsi.write(os.path.join(md_ies,"dsi.pst"),version=2)
-
-    # deploy dsi...
-    pvals = pd.read_csv(os.path.join(md_ies,"dsi_pars.csv"),index_col=0)
-    
-    worker_root="."
-    dsi = pickle.load(open(os.path.join(md_ies,"dsi.pickle"),"rb"))
-
-    # read forward_run.py and check the name of the function in __main__
-    frun_lines = open(os.path.join(md_ies,"forward_run.py"),'r').readlines()
-    main_func_name = frun_lines[-1].strip().replace("()","")
-    print(main_func_name,"will be called for forward run")
-    if main_func_name.startswith("dsi_runstore_forward_run"):
-        print("running dsi_runstore_forward_run")
-        pyemu.os_utils.run(f'{ies_exe_path} dsi.pst /e', cwd=md_ies, verbose=True)
-    elif main_func_name.startswith("dsi_forward_run"):
-        num_workers = dsi.dsi_args.get("num_pyworkers",1)
-        print(num_workers,"workers requested for dsi")
-        pyemu.os_utils.start_workers(md_ies,ies_exe_path,"dsi.pst",
-                                    num_workers=num_workers,
-                                    worker_root=worker_root,
-                                    port = PortManager().get_available_port(),
-                                        master_dir=md_ies,
-                                        reuse_master =True,
-                                        ppw_function=pyemu.helpers.dsi_pyworker,
-                                        ppw_kwargs={"dsi":dsi,"pvals":pvals})  
-    assert os.path.exists(os.path.join(md_ies,f"dsi.{noptmax}.obs.jcb")) or os.path.exists(os.path.join(md_ies,f"dsi.{noptmax}.obs.csv")), f"dsi.{noptmax}.obs.[jcb|csv] not found...pst failed?"
-
-
-    #TODO: checks on PDC or Eulerian distance to training data?
-
-    #postprocess stack
-    try:
-        oe = pyemu.ObservationEnsemble.from_binary(pst_dsi,os.path.join(md_ies,f"dsi.{noptmax}.obs.jcb"))
-    except:
-        oe = pyemu.ObservationEnsemble.from_csv(pst_dsi,os.path.join(md_ies,f"dsi.{noptmax}.obs.csv"))
-    assert oe.shape[0] == noise.shape[0], "stack and noise shapes do not match; failed runs?"
-    if dsi.dsivc_args.get("track_stack",False):
-        # write long form oe
-        stack = oe._df.reset_index().melt(id_vars="real_name")
-        stack.rename(columns={"value":"obsval"},inplace=True)
-        stack['obsnme'] = stack.apply(lambda x: x.variable+"_real:"+x.real_name,axis=1)
-        stack.set_index("obsnme",inplace=True)
-        stack = stack.obsval
-        out_file = os.path.join(md_ies,"dsi.stack.csv")
-        stack.to_csv(out_file,float_format="%.6e")
-    #write stats
-    #get user-specified quantiles
-    percentiles = dsi.dsivc_args.get("percentiles",[0.25,0.75,0.5])
-    stack_stats = oe._df.describe(percentiles=percentiles).reset_index().melt(id_vars="index")
-    stack_stats.rename(columns={"value":"obsval","index":"stat"},inplace=True)
-    stack_stats['obsnme'] = stack_stats.apply(lambda x: x.variable+"_stat:"+x.stat,axis=1)
-    stack_stats.set_index("obsnme",inplace=True)
-    stack_stats = stack_stats.obsval
-    out_file = os.path.join(md_ies,"dsi.stack_stats.csv")
-    stack_stats.to_csv(out_file,float_format="%.6e")
-
-    return
 
 def dsi_pyworker(pst,host,port,dsi=None,pvals=None):
     
@@ -5174,11 +5044,7 @@ def series_to_insfile(out_file,ins_file=None):
     sdf = pd.read_csv(out_file,index_col=0)
     assert sdf.shape[1] == 1, "only one column allowed"
     sdf = sdf.iloc[:,0]
-    with open(ins_file,'w') as f:
-        f.write("pif ~\n")
-        f.write("l1\n")
-        for oname in sdf.index.values:
-            f.write("l1 ~,~ !{0}!\n".format(oname))
+    pyemu.pst_utils.csv_ins_from_obsnames(sdf.index.values, ins_file)
     return
 
 
@@ -5236,17 +5102,13 @@ def add_phi_as_obs(pst_name,pst_path='.'):
     pst = pyemu.Pst(os.path.join(pst_path,pst_name))
     import inspect
     lines = inspect.getsource(calc_phi)
-    with open(os.path.join(pst_path,"calc_phi.py"),'w') as f:
+    with open(os.path.join(pst_path,"calc_phi.py"),'w',encoding="utf-8") as f:
         f.write(lines)
         f.write("\n")
         f.write("if __name__ == '__main__':\n")
         f.write("    calc_phi('{0}')\n".format(pst_name))
     ifile_name = os.path.join(pst_path,"phi_components.csv.ins")
-    with open(os.path.join(ifile_name),'w') as f:
-        f.write("pif ~\n")
-        f.write("l1\n")
-        for idx_val in df.index:
-            f.write("l1 ~,~ !{0}!\n".format(idx_val))
+    pyemu.pst_utils.csv_ins_from_obsnames(df.index, ifile_name)
     pdf = pst.add_observations(ifile_name,ifile_name.replace(".ins",""),pst_path='.')
     pst.observation_data.loc[pdf.obsnme.values,"weight"] = 0.0
     pst.observation_data.loc[pdf.obsnme.values, "obsval"] = 0.0
