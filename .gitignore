@@ -245,3 +245,6 @@ tutorial/model/**/*.lst
 tutorial/model/**/*.hds
 tutorial/model/**/*.ucn
 tutorial/model/**/sout.csv
+
+*.code-workspace
+
