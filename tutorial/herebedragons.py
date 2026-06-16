@@ -193,7 +193,7 @@ def build_wells_dewater(sim, pitcells, rate):
         pname='wel-dewater', filename='dewater.wel',
         auxiliary='tracer', boundnames=True,
         auto_flow_reduce=0.1,
-        print_input=True,
+        # print_input=True,
         afrcsv_filerecord='dewater.autoreduce.csv'
     )
     wel.set_all_data_external()
@@ -222,7 +222,7 @@ def build_wells_mar(sim, pitcells, rate):
     wel = flopy.mf6.ModflowGwfwel(
         gwf, stress_period_data=spd,
         pname='wel-mar', filename='mar.wel',
-        print_input=True,
+        # print_input=True,
         auxiliary='tracer', boundnames=True,
     )
     wel.set_all_data_external()
