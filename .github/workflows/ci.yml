@@ -34,6 +34,19 @@ jobs:
         if: runner.os != 'Windows'
         run: chmod +x tutorial/bin/linux/* tutorial/bin/mac/* || true
 
+      - name: Diagnose mf6rtm / libmf6 load
+        run: |
+          python -c "import numpy; print('numpy', numpy.__version__)"
+          python -c "import phreeqcrm; print('phreeqcrm', phreeqcrm.__file__)"
+          python -c "import modflowapi, xmipy; print('modflowapi', modflowapi.__version__)"
+          case "${{ runner.os }}" in
+            Linux)   L=tutorial/bin/linux/libmf6.so ; ldd "$L" | grep -i 'not found' || echo 'ldd: all deps resolved' ;;
+            macOS)   L=tutorial/bin/mac/libmf6.dylib ; otool -L "$L" || true ;;
+            Windows) L=tutorial/bin/win/libmf6.dll ;;
+          esac
+          python -c "import ctypes,sys; ctypes.CDLL(sys.argv[1]); print('libmf6 loaded OK')" "$L"
+        continue-on-error: false
+
       - name: Put the OS-specific binaries on PATH
         run: |
           case "${{ runner.os }}" in
