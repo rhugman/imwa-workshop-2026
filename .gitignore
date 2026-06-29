@@ -223,6 +223,8 @@ tutorial/master_*/
 tutorial/priormc/
 tutorial/pst_template*/
 tutorial/worker_*/
+tutorial/dsi_*/
+tutorial/opt_diagnostics/
 tutorial/*.chem.txt
 tutorial/*.log.txt
 tutorial/_ci_*.ipynb

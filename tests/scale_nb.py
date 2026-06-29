@@ -20,8 +20,10 @@ import sys
 SUBS = [
     # pst.pestpp_options["ies_num_reals"] = <n>
     (re.compile(r'(["\']ies_num_reals["\']\]\s*=\s*)\d+'), r"\g<1>4"),
-    # num_workers = <n>   (won't touch `num_workers=num_workers`: no digit there)
-    (re.compile(r"(\bnum_workers\s*=\s*)\d+"), r"\g<1>2"),
+    # num_workers = <n> OR = min(10, os.cpu_count() - 1)  -> 2
+    # (won't touch `num_workers=num_workers`: no digit / min() there; the min() branch matches
+    # one nested call so it stops at min()'s own ')', not a trailing def ')')
+    (re.compile(r"(\bnum_workers\s*=\s*)(?:\d+|min\([^()]*\([^()]*\)[^()]*\))"), r"\g<1>2"),
     # control_data.noptmax = <positive n>  -> 1   (leaves -1, -2, 0 alone)
     (re.compile(r"(\bcontrol_data\.noptmax\s*=\s*)[1-9]\d*"), r"\g<1>1"),
 ]
